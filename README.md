@@ -1,6 +1,9 @@
 <div align="center">
 
-# ⚡ HyperEdge
+# HyperEdge | Rust Distributed Edge Cache and Reverse Proxy
+
+HyperEdge is a Rust project exploring a distributed edge-cache and reverse-proxy architecture. Its documented components include cache lookup and eviction, consistent-hash routing, upstream failover, and multiplexed request handling across edge locations. The repository is relevant to developers studying caching layers, content delivery, reverse proxies, and distributed routing; run the supplied tests and benchmarks in your own environment.
+
 
 **Global Anycast Edge Distributed Cache & Reverse Proxy**
 
