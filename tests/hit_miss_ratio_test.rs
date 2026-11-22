@@ -148,3 +148,73 @@ async fn test_concurrent_zipfian_hit_ratio() {
     assert!(stats.hit_ratio > 0.40, "Expected hit ratio > 40%, got {}", stats.hit_ratio);
     assert!(stats.count <= 30, "Cache exceeded capacity: {}", stats.count);
 }
+
+
+#[tokio::test]
+async fn test_zero_capacity_cache_does_not_loop_or_store_entries() {
+    let metrics = EdgeMetrics::new();
+    let config = CacheConfig {
+        max_capacity: 0,
+        max_memory_bytes: 1024,
+        default_ttl_secs: 60,
+        eviction_policy: "lru".to_string(),
+        cleanup_interval_secs: 5,
+    };
+    let cache = EdgeCache::new(&config, metrics);
+
+    cache.insert(
+        "disabled".to_string(),
+        Bytes::from("value"),
+        None,
+        None,
+        200,
+    );
+
+    assert!(cache.is_empty());
+    assert_eq!(cache.memory_usage(), 0);
+}
+
+#[tokio::test]
+async fn test_entry_larger_than_memory_budget_is_not_cached() {
+    let metrics = EdgeMetrics::new();
+    let config = CacheConfig {
+        max_capacity: 10,
+        max_memory_bytes: 8,
+        default_ttl_secs: 60,
+        eviction_policy: "lru".to_string(),
+        cleanup_interval_secs: 5,
+    };
+    let cache = EdgeCache::new(&config, metrics);
+
+    cache.insert(
+        "oversized".to_string(),
+        Bytes::from("payload that cannot fit"),
+        None,
+        None,
+        200,
+    );
+
+    assert!(cache.is_empty());
+    assert_eq!(cache.memory_usage(), 0);
+}
+
+#[tokio::test]
+async fn test_replacing_entry_at_capacity_preserves_unrelated_entries() {
+    let metrics = EdgeMetrics::new();
+    let config = CacheConfig {
+        max_capacity: 2,
+        max_memory_bytes: 1024,
+        default_ttl_secs: 60,
+        eviction_policy: "lru".to_string(),
+        cleanup_interval_secs: 5,
+    };
+    let cache = EdgeCache::new(&config, metrics);
+
+    cache.insert("first".to_string(), Bytes::from("one"), None, None, 200);
+    cache.insert("second".to_string(), Bytes::from("two"), None, None, 200);
+    cache.insert("first".to_string(), Bytes::from("updated"), None, None, 200);
+
+    assert_eq!(cache.len(), 2);
+    assert_eq!(cache.get("first").unwrap().value.as_ref(), b"updated");
+    assert!(cache.get("second").is_some());
+}
