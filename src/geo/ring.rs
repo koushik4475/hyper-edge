@@ -89,6 +89,10 @@ impl GeoHashRing {
 
     /// Retrieve N distinct replica nodes for a given cache key
     pub fn get_replicas(&self, key: &str, replica_count: usize) -> Result<Vec<Arc<EdgeNode>>> {
+        if replica_count == 0 {
+            return Ok(Vec::new());
+        }
+
         let ring_lock = self.ring.read();
         let nodes_lock = self.nodes.read();
 
