@@ -96,12 +96,23 @@ impl EdgeCache {
         ));
         let item_size = entry.size_bytes;
 
-        // Ensure capacity and memory limits before inserting
-        self.enforce_capacity(item_size);
-
-        if let Some(old) = self.map.insert(key, entry.clone()) {
-            self.current_memory.fetch_sub(old.size_bytes, Ordering::Relaxed);
+        // An entry larger than the entire cache budget, or a disabled cache,
+        // must not trigger an eviction loop or displace useful entries.
+        if self.max_capacity == 0 || item_size > self.max_memory_bytes {
+            return entry;
         }
+
+        // Replacing a key should not evict an unrelated entry just because the
+        // map is currently at its count limit.
+        self.remove(&key);
+
+        // Ensure capacity and memory limits before inserting. Under contention,
+        // an eviction may fail; in that case leave the cache unchanged.
+        if !self.enforce_capacity(item_size) {
+            return entry;
+        }
+
+        self.map.insert(key, entry.clone());
         self.current_memory.fetch_add(item_size, Ordering::Relaxed);
 
         entry
@@ -116,20 +127,28 @@ impl EdgeCache {
         }
     }
 
-    fn enforce_capacity(&self, incoming_bytes: usize) {
-        // Check if eviction needed for count capacity
+    fn enforce_capacity(&self, incoming_bytes: usize) -> bool {
+        // Check if eviction needed for count capacity.
         while self.map.len() >= self.max_capacity {
-            self.evict_one();
+            if !self.evict_one() {
+                return false;
+            }
         }
 
-        // Check if eviction needed for memory limit
-        while (self.current_memory.load(Ordering::Relaxed) + incoming_bytes) > self.max_memory_bytes
+        // Check if eviction needed for memory limit. Saturating arithmetic
+        // avoids overflow if a caller supplies an extreme configured budget.
+        while self.current_memory.load(Ordering::Relaxed).saturating_add(incoming_bytes)
+            > self.max_memory_bytes
             && !self.map.is_empty()
         {
             if !self.evict_one() {
-                break;
+                return false;
             }
         }
+
+        self.map.len() < self.max_capacity
+            && self.current_memory.load(Ordering::Relaxed).saturating_add(incoming_bytes)
+                <= self.max_memory_bytes
     }
 
     fn evict_one(&self) -> bool {
