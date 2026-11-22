@@ -121,3 +121,19 @@ fn test_minimal_key_redistribution_on_node_leave() {
         shift_percentage * 100.0
     );
 }
+
+
+#[test]
+fn test_zero_replica_request_returns_empty_list() {
+    let ring = GeoHashRing::new(64);
+    ring.add_node(EdgeNode::new(EdgeNodeConfig {
+        id: "pop-iad".to_string(),
+        pop_code: "IAD".to_string(),
+        addr: "127.0.0.1:8081".to_string(),
+        latitude: 38.9531,
+        longitude: -77.4565,
+        weight: 100,
+    }));
+
+    assert!(ring.get_replicas("asset:zero-replicas", 0).unwrap().is_empty());
+}
